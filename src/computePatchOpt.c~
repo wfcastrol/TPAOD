@@ -1,0 +1,315 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <limits.h>
+
+#define LINE_MAX_SIZE 100
+
+const unsigned int INF = UINT_MAX;
+unsigned int n = 0; //Number of lines in the input file
+unsigned int m = 0; //Number of lines in the output file
+
+char** F2 = NULL; //Array that will have the information of the output file
+char** F1 = NULL; //Array that will have the information of the input file
+char*** instruction = NULL;  //Matrix saves the text of every instruction
+char** Patch = NULL; //Optimized patch instructions
+unsigned int** optimal = NULL; //Matrix containing the costs of every combination
+
+unsigned int Length(char line[LINE_MAX_SIZE]) {
+  unsigned int p = 0;
+
+  while (line[p] != '\n') {
+    p++;
+  }
+  return p;
+}
+
+unsigned int findPatch (unsigned int i, unsigned int j, unsigned int n, unsigned int m,
+                         unsigned int** mat, char** F1, char** F2, char*** instruction) {
+  int p = 0;
+  if (mat[i][j] != INF) {
+    //If it is already calculated, we return the value already stocked
+    return mat[i][j];
+  
+  } else {
+    if ((i==0) && (j==0)) {
+      //The limit constrained for minimum i and j values
+      mat[i][j] = 0;
+    
+    } else {
+      //If the output has no more lines, then we have to erase all the rest in the input
+      if (j == 0) { 
+      	if (i == 1) {
+      	  mat[i][j] = 10;
+      	  sprintf(instruction[i][j], "d %u\n", i);
+      	
+        }	else {
+      	  mat[i][j] = 15;
+      	  sprintf(instruction[i][j], "D 1 %u\n", i);
+      	}
+
+      } else if (i == 0) {
+        //If the input has no more lines, then we have to add all the rest of the output
+
+      	int costAdd = 0;
+      	for (p=0; p<j; p++) {
+      	  costAdd +=  10 + Length (F2[p]);
+      	  sprintf(instruction[i][j], "+ %u\n%s", i, F2[p]);
+      	}
+      	mat[i][j] = costAdd;
+      
+      } else if (strcmp(F1[i-1],F2[j-1]) == 0) {
+	      mat[i][j] = findPatch (i-1, j-1, n, m, mat, F1, F2, instruction);
+      
+      } else {
+      	unsigned int Subs = findPatch (i-1, j-1, n, m, mat, F1, F2, instruction) + 10 + Length(F2[j-1]); //Cost of Substitution
+      	unsigned int Add = findPatch (i, j-1, n, m, mat, F1, F2, instruction) + 10 + Length(F2[j-1]); //Cost of addition
+      	unsigned int* DelMul = (unsigned int*) malloc(i*sizeof(unsigned int)); //Cost of Delete multiple lines
+      	
+        DelMul[0] = findPatch (i-1, j, n, m, mat, F1, F2, instruction) + 10; //Cost of Delete 1 line
+      	for (p = 1; p<i; p++) {
+      	  DelMul[p] = findPatch (i-(p+1), j, n, m, mat, F1, F2, instruction) + 15; //p+1 is the number of lines we are going to delete
+      	}
+      	
+        unsigned int DelMax = 0; //The number of lines to delete from the i-th line
+      	unsigned int Del = INF; //Cost of deleting to find the maximum
+      	
+        for (p = 0; p<i; p++) {
+      	  if (Del > DelMul[p]) {
+      	    Del = DelMul[p];
+      	    DelMax = p+1;
+      	  }
+      	}
+
+      	if (Subs < Add) {
+      	  
+          if (Subs < Del) {
+      	    mat[i][j] = Subs;
+      	    sprintf(instruction[i][j], "= %u\n%s", i, F2[j-1]);
+      	  
+          } else {
+      	    mat[i][j] = Del;
+      	  
+            if (DelMax == 0){ 
+      	      sprintf(instruction[i][j], "d %u\n", i);
+      	    
+            } else {
+      	      sprintf(instruction[i][j], "D %u %u\n", i-1, DelMax);
+      	    }
+      	  }
+
+      	}	else {
+          
+          //Subs > Add
+      	  if (Add < Del) {
+      	    mat[i][j] = Add;
+      	    sprintf(instruction[i][j], "+ %u\n%s", i, F2[j-1]);
+      	  
+          } else {
+      	    mat[i][j] = Del;
+      	  
+            if (DelMax == 0){ 
+      	      sprintf(instruction[i][j], "d %u\n", i);
+      	  
+            } else {
+      	      sprintf(instruction[i][j], "D %u %u\n", i-1, DelMax);
+      	    }
+      	  }
+      	}
+        free(DelMul);
+      }
+    }
+
+    return mat[i][j];
+  }
+}
+
+int Patch_solver(FILE *originalFile, FILE *resultFile) {
+  char buffer[LINE_MAX_SIZE]; // should suffice for (instruction, 32-bit int)
+
+  int p = 0; //Variable for the loops
+
+  while (fgets(buffer,LINE_MAX_SIZE, originalFile)!=NULL) {
+    n +=1;
+  }
+
+  printf("n=%u\n",n);
+  
+  while (fgets(buffer,LINE_MAX_SIZE, resultFile)!=NULL) {
+    m +=1;
+  }
+  printf("m=%u\n",m);
+
+  rewind(originalFile);
+  rewind(resultFile);
+  
+  int k;
+  int l;
+  int w;
+  
+  F2 = (char**) malloc(m*sizeof(char*));
+  
+  
+  for (k = 0; k < m; k++){
+    F2[k] = (char*) malloc(LINE_MAX_SIZE*sizeof(char));  
+  }
+  
+
+  F1 = (char**) malloc(n*sizeof(char*));
+  
+  
+  for (k = 0; k < n; k++){
+    F1[k] = (char*) malloc(LINE_MAX_SIZE*sizeof(char));  
+  }
+  
+
+  optimal = (unsigned int**) malloc((n+1)*sizeof(unsigned int*));  
+  
+  for (k = 0; k < (m+1); k++){
+    optimal[k] = (unsigned int*) malloc((m+1)*sizeof(unsigned int));  
+  }
+
+  for (k=0; k < (n+1); k++) {
+    for (l=0; l < (m+1); l++) {
+      optimal[k][l] = INF;
+    }
+  }
+
+  instruction = (char***) malloc((n+1)*sizeof(char**));
+
+  for (k=0; k < (n+1); k++) {
+    instruction[k] = (char**) malloc((m+1)*sizeof(char*));
+  }
+
+  for (k=0; k < (n+1); k++) {
+    for (l=0; l < (m+1); l++) {
+      instruction[k][l] = (char*) malloc(LINE_MAX_SIZE*sizeof(char));
+    }
+  }
+
+
+  for (p=0; p<n; p++) {
+    fgets(F1[p],LINE_MAX_SIZE,originalFile);
+  }
+
+  for (p=0; p<m; p++) {
+    fgets(F2[p],LINE_MAX_SIZE,resultFile);
+  }
+
+  k = findPatch (n, m, n, m, optimal, F1, F2, instruction);
+  printf("Salio del parche con costo %d\n", k);
+
+  /**
+   *To find the optimal patch, it searches from the last instruction and backwards
+   */
+  Patch = (char**) malloc((n+m)*sizeof(char*));
+
+  for (k=0; k<(n+m); k++) {
+    Patch[k] = (char*) malloc(LINE_MAX_SIZE*sizeof(char));
+  }
+
+  p = 0;
+  k = n;
+  l = m;
+
+  while ((k>0) || (l>0)) { 
+    sprintf(Patch[p],"%s",instruction[k][l]);
+    p=p+1;
+    char inst = instruction[k][l][0];
+
+    switch (inst) {
+      case 'd': 
+        k = k-1;
+        break;
+
+      case 'D': 
+        w = 9; //this would be enought for the digits of the D intsruction
+        unsigned int pos =  Length(instruction[k][l]); //We get the position of the \n character
+        char Deletes [10] = {' ',' ',' ',' ',' ',' ',' ',' ',' ',' '}; //We start an array with spaces
+       
+        //We read the number of lines Deleted in the D instruction
+        while (instruction[k][l][pos] != ' ') { 
+        	Deletes [w] = instruction[k][l][pos];
+        	w--;
+        	pos--;
+        }
+
+        w = atoi(Deletes);
+        k = k - w;
+        break;
+
+      case '=':
+        k = k-1;
+        l = l-1;
+        break;
+
+      case '+':
+        l = l-1;
+        break;
+
+      default:
+        k = k-1;
+        l = l-1;
+        break;
+    }
+  }
+
+  /**
+   *This is fori writing the file
+   */
+  FILE *patchFile;
+  patchFile = fopen("./Patch","w");
+
+  while (p >= 0) {
+    fprintf(patchFile,"%s",Patch[p]);
+    p--;
+  }
+
+  fclose(patchFile);
+
+  return optimal[n][m];
+}
+
+
+/**
+ * Main function
+ * \brief Main function
+ * \param argc  A count of the number of command-line arguments
+ * \param argv  An argument vector of the command-line arguments.
+ * \warning Must be called with two filenames patchFile, originalFile as commandline parameters and in the given order.
+ * \returns { 0 if succeeds, exit code otherwise}
+ */
+int main (int argc, char *argv[]) {
+  FILE *originalFile; 
+  FILE *resultFile;
+
+  unsigned int i = 0;
+//  unsigned int j = 0;
+  
+  if(argc<3){
+    fprintf(stderr, "!!!!! Usage: ./PatchSolver originalFile resultFile !!!!!\n");
+    exit(EXIT_FAILURE); /* indicate failure.*/
+  }
+  
+  originalFile = fopen(argv[1] , "r" );
+  resultFile = fopen(argv[2] , "r" );
+  
+  Patch_solver(originalFile, resultFile);
+  
+  for (i = 0; i < m; i++){
+    if (F2[i] != NULL){
+      free(F2[i]);
+    }
+  }
+  
+  for (i = 0; i < n; i++){
+    if (F1[i] != NULL){
+      free(F1[i]);
+    } 
+  }
+
+  fclose(originalFile);
+  fclose(resultFile);
+  return 0;
+}
